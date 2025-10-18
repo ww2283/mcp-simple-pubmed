@@ -171,3 +171,6 @@ check_deps
 sync_deps
 .mcp.json
 .claude/
+
+# leann
+.leann/
