@@ -38,12 +38,13 @@ class PubMedSearch:
             
         logger.info(f"PubMed search initialized with email: {email}, tool: {tool}")
 
-    async def search_articles(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
+    async def search_articles(self, query: str, max_results: int = 10, include_abstracts: bool = False) -> List[Dict[str, Any]]:
         """Search for articles matching the query.
 
         Args:
             query: Search query string
             max_results: Maximum number of results to return
+            include_abstracts: Whether to include abstracts in results (default: False)
 
         Returns:
             List of article metadata dictionaries
@@ -101,10 +102,13 @@ class PubMedSearch:
                     article = {
                         "pmid": pmid,
                         "title": self._get_xml_text(article_root, './/ArticleTitle') or "No title",
-                        "abstract": self._get_xml_text(article_root, './/Abstract/AbstractText') or "No abstract available",
                         "journal": self._get_xml_text(article_root, './/Journal/Title') or "",
                         "authors": []
                     }
+
+                    # Include abstract only if requested
+                    if include_abstracts:
+                        article["abstract"] = self._get_xml_text(article_root, './/Abstract/AbstractText') or "No abstract available"
                     
                     # Get authors
                     author_list = article_root.findall('.//Author')

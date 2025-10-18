@@ -34,12 +34,13 @@ class PubMedClient:
         if api_key:
             Entrez.api_key = api_key
 
-    async def search_articles(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
+    async def search_articles(self, query: str, max_results: int = 10, include_abstracts: bool = False) -> List[Dict[str, Any]]:
         """Search for articles matching the query.
 
         Args:
             query: Search query string
             max_results: Maximum number of results to return
+            include_abstracts: Whether to include abstracts in results (default: False)
 
         Returns:
             List of article metadata dictionaries
@@ -72,7 +73,7 @@ class PubMedClient:
                 
                 # Step 2: Get details for each article
                 for pmid in pmids:
-                    article = await self.get_article_details(pmid)
+                    article = await self.get_article_details(pmid, include_abstract=include_abstracts)
                     if article:
                         results.append(article)
             
@@ -82,11 +83,12 @@ class PubMedClient:
             logger.exception(f"Error in search_articles: {str(e)}")
             raise
 
-    async def get_article_details(self, pmid: str) -> Optional[Dict[str, Any]]:
+    async def get_article_details(self, pmid: str, include_abstract: bool = True) -> Optional[Dict[str, Any]]:
         """Get details for a specific article by PMID.
 
         Args:
             pmid: PubMed ID of the article
+            include_abstract: Whether to include abstract in result (default: True for backward compatibility)
 
         Returns:
             Dictionary with article metadata or None if not found
@@ -106,12 +108,15 @@ class PubMedClient:
                 article = {
                     "pmid": pmid,
                     "title": self._get_xml_text(article_root, './/ArticleTitle') or "No title",
-                    "abstract": self._get_full_abstract(article_root) or "No abstract available",
                     "journal": self._get_xml_text(article_root, './/Journal/Title') or "",
                     "authors": [],
                     "keywords": [],
                     "mesh_terms": []
                 }
+
+                # Include abstract only if requested
+                if include_abstract:
+                    article["abstract"] = self._get_full_abstract(article_root) or "No abstract available"
                 
                 # Get authors
                 author_list = article_root.findall('.//Author')

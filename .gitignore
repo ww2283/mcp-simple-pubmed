@@ -162,3 +162,12 @@ cython_debug/
 #.idea/
 
 .cursor
+
+# Claude template files (copied, can be synced)
+.claude/*
+!.claude/settings.local.json
+!.claude/.template-source
+check_deps
+sync_deps
+.mcp.json
+.claude/

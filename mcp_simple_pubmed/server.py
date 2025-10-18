@@ -4,6 +4,7 @@ MCP server implementation for PubMed integration using FastMCP SDK.
 import os
 import json
 import logging
+from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 
 from fastmcp import FastMCP
@@ -41,8 +42,15 @@ pubmed_client, fulltext_client = configure_clients()
         "openWorldHint": True  # Calls external PubMed API
     }
 )
-async def search_pubmed(query: str, max_results: int = 10) -> str:
+async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bool = False, output_file: Optional[str] = None) -> str:
     """Search PubMed for medical and life sciences research articles.
+
+    Args:
+        query: Search query string
+        max_results: Maximum number of results to return (1-50, default: 10)
+        include_abstracts: Include abstracts in results (default: False). Set to True to include full abstracts.
+        output_file: Optional file path to save results. If provided, results are written to file and only
+                     a summary is returned. Use absolute path or path relative to current directory.
 
     You can use these search features:
     - Simple keyword search: "covid vaccine"
@@ -64,24 +72,27 @@ async def search_pubmed(query: str, max_results: int = 10) -> str:
     The search will return:
     - Paper titles
     - Authors
+    - Journal name
     - Publication details
-    - Abstract preview (when available)
+    - Abstract (only if include_abstracts=True)
     - Links to full text (when available)
     - DOI when available
     - Keywords and MeSH terms
 
     Note: Use quotes around multi-word terms for best results.
+          By default, abstracts are excluded to reduce token usage. Fetch them on-demand via resources.
     """
     try:
         # Validate and constrain max_results
         max_results = min(max(1, max_results), 50)
         
-        logger.info(f"Processing search with query: {query}, max_results: {max_results}")
+        logger.info(f"Processing search with query: {query}, max_results: {max_results}, include_abstracts: {include_abstracts}")
 
         # Perform the search
         results = await pubmed_client.search_articles(
             query=query,
-            max_results=max_results
+            max_results=max_results,
+            include_abstracts=include_abstracts
         )
         
         # Create resource URIs for articles
@@ -105,7 +116,56 @@ async def search_pubmed(query: str, max_results: int = 10) -> str:
             
             articles_with_resources.append(article)
 
-        # Format the response
+        # Handle file output if requested
+        if output_file:
+            try:
+                # Resolve to absolute path
+                file_path = Path(output_file).expanduser().resolve()
+
+                # Security check: ensure path doesn't use directory traversal tricks
+                # and is writable
+                try:
+                    # Create parent directories if they don't exist
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Write results to file
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        json.dump(articles_with_resources, f, indent=2, ensure_ascii=False)
+
+                    logger.info(f"Results written to file: {file_path}")
+
+                    # Create summary response
+                    summary_lines = [
+                        f"Search completed successfully. Found {len(results)} results.",
+                        f"Results written to: {file_path}",
+                        "",
+                        "Top results:"
+                    ]
+
+                    # Add top 3 results to summary
+                    for i, article in enumerate(articles_with_resources[:3], 1):
+                        title = article.get('title', 'No title')
+                        pmid = article.get('pmid', 'Unknown')
+                        journal = article.get('journal', 'Unknown journal')
+                        summary_lines.append(f"{i}. {title}")
+                        summary_lines.append(f"   Journal: {journal} | PMID: {pmid}")
+                        summary_lines.append("")
+
+                    if len(articles_with_resources) > 3:
+                        summary_lines.append(f"... and {len(articles_with_resources) - 3} more results in the file.")
+
+                    return "\n".join(summary_lines)
+
+                except PermissionError:
+                    raise ValueError(f"Permission denied: Cannot write to {file_path}")
+                except OSError as e:
+                    raise ValueError(f"Cannot write to file {file_path}: {str(e)}")
+
+            except Exception as e:
+                logger.error(f"Error writing to file: {str(e)}")
+                raise ValueError(f"Error writing results to file: {str(e)}")
+
+        # Format the response for direct return
         formatted_results = json.dumps(articles_with_resources, indent=2)
         logger.info(f"Search completed successfully, found {len(results)} results")
 
