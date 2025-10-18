@@ -109,6 +109,7 @@ class PubMedClient:
                     "pmid": pmid,
                     "title": self._get_xml_text(article_root, './/ArticleTitle') or "No title",
                     "journal": self._get_xml_text(article_root, './/Journal/Title') or "",
+                    "nlm_unique_id": self._get_xml_text(article_root, './/NlmUniqueID') or "",
                     "authors": [],
                     "keywords": [],
                     "mesh_terms": []
