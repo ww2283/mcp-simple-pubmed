@@ -118,9 +118,13 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
     - query_translation: how PubMed actually interpreted the query
     - term_mappings: from/to pairs, present only when PubMed remapped a term automatically
     - errors / warnings: present only when PubMed reports them (e.g. an unknown field tag)
-    - articles: title, authors, journal, publication details, links, DOI, keywords, MeSH terms
+    - articles: title, authors, journal, publication details, links, DOI, keywords, MeSH terms,
+      publication_types
 
     Note: Use quotes around multi-word terms for best results.
+          PubMed indexes a review as both "Journal Article" and "Review", so "Journal Article"[PT]
+          does not exclude reviews - filter on publication_types instead. It also carries
+          "Retracted Publication".
           Abstracts are included but capped at abstract_chars; abstract_truncated marks the cut ones.
     """
     try:
