@@ -28,3 +28,11 @@ Homepage = "https://github.com/andybrandt/mcp-simple-pubmed"
 
 [project.scripts]
 mcp-simple-pubmed = "mcp_simple_pubmed.__main__:main"
+
+[tool.ruff]
+target-version = "py311"
+
+# Pinned explicitly: ruff 0.16 widened the implicit default set, so relying on
+# it makes the CI gate drift with the installed version.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
