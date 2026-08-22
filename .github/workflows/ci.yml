@@ -47,10 +47,15 @@ jobs:
         run: |
           python -c "
           import asyncio
+          from fastmcp import Client
           import mcp_simple_pubmed.server as server
-          tools = asyncio.run(server.app.get_tools())
-          expected = {'search_pubmed', 'get_paper_fulltext'}
-          missing = expected - set(tools)
+
+          async def main():
+              async with Client(server.app) as c:
+                  return {t.name for t in await c.list_tools()}
+
+          tools = asyncio.run(main())
+          missing = {'search_pubmed', 'get_paper_fulltext'} - tools
           assert not missing, f'unregistered tools: {missing}'
           print('registered tools:', sorted(tools))
           "
