@@ -170,6 +170,7 @@ cython_debug/
 .claude_session_*
 .lock..claude_session_*
 git_commit_frame.json
+prune_active_DO_NOT_COMMIT
 check_deps
 sync_deps
 claude

@@ -12,6 +12,8 @@ from Bio import Entrez
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pubmed-client")
 
+VALID_SORT_ORDERS = ("relevance", "pub_date", "Author", "JournalName")
+
 class PubMedClient:
     """Client for interacting with PubMed/Entrez API."""
 
@@ -33,26 +35,22 @@ class PubMedClient:
         if api_key:
             Entrez.api_key = api_key
 
-    async def search_articles(self, query: str, max_results: int = 10, include_abstracts: bool = False) -> List[Dict[str, Any]]:
-        """Search for articles matching the query.
+    async def search_articles(self, query: str, max_results: int = 10, include_abstracts: bool = False, sort: str = "relevance") -> List[Dict[str, Any]]:
+        """Search for articles matching the query, ordered by `sort`.
 
-        Results are sorted by relevance (PubMed's "Best Match" algorithm), which considers
-        search term matching, publication recency, citations, and other relevance signals.
-
-        Args:
-            query: Search query string
-            max_results: Maximum number of results to return
-            include_abstracts: Whether to include abstracts in results (default: False)
-
-        Returns:
-            List of article metadata dictionaries, sorted by relevance
+        Valid sort orders are listed in VALID_SORT_ORDERS; anything else raises ValueError.
         """
+        if sort not in VALID_SORT_ORDERS:
+            raise ValueError(
+                f"Invalid sort order {sort!r}. Valid sort orders are: {', '.join(VALID_SORT_ORDERS)}"
+            )
+
         try:
             logger.info(f"Searching PubMed with query: {query}")
             results = []
 
-            # Step 1: Search for article IDs (sorted by relevance/Best Match)
-            handle = Entrez.esearch(db="pubmed", term=query, retmax=str(max_results), sort="relevance")
+            # Step 1: Search for article IDs
+            handle = Entrez.esearch(db="pubmed", term=query, retmax=str(max_results), sort=sort)
             if not handle:
                 logger.error("Got None handle from esearch")
                 return []

@@ -15,6 +15,8 @@ from mcp_simple_pubmed.fulltext_client import FullTextClient
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pubmed-server")
 
+MAX_RESULTS_LIMIT = 1000
+
 # Initialize FastMCP app
 app = FastMCP("pubmed-server")
 
@@ -42,19 +44,20 @@ pubmed_client, fulltext_client = configure_clients()
         "openWorldHint": True  # Calls external PubMed API
     }
 )
-async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bool = False, output_file: Optional[str] = None) -> str:
+async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bool = False, output_file: Optional[str] = None, sort: str = "relevance") -> str:
     """Search PubMed for medical and life sciences research articles.
 
-    Results are automatically sorted by relevance (PubMed's "Best Match" algorithm),
-    which considers search term matching, publication recency, citations, and other
-    relevance signals to return the most pertinent articles first.
+    Results default to relevance ("Best Match") order; use the sort parameter to change it.
+    Best Match degrades sharply on OR-heavy boolean queries, so anchor the core concept on
+    [MeSH Terms] and prefer AND-ing specific terms over OR-ing generic ones.
 
     Args:
         query: Search query string
-        max_results: Maximum number of results to return (minimum: 1, default: 10)
+        max_results: Maximum number of results to return (clamped to 1..1000, default: 10)
         include_abstracts: Include abstracts in results (default: False). Set to True to include full abstracts.
-        output_file: Optional file path to save results. If provided, results are written to file and only
-                     a summary is returned. Use absolute path or path relative to current directory.
+        output_file: Optional file path to save results; results are written wherever this path points
+                     (parent directories are created) and only a summary is returned.
+        sort: Result ordering - one of relevance, pub_date, Author, JournalName (default: relevance)
 
     You can use these search features:
     - Simple keyword search: "covid vaccine"
@@ -87,16 +90,19 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
           By default, abstracts are excluded to reduce token usage. Fetch them on-demand via resources.
     """
     try:
-        # Validate max_results (minimum 1, no upper limit)
-        max_results = max(1, max_results)
-        
+        clamped_max_results = min(MAX_RESULTS_LIMIT, max(1, max_results))
+        if clamped_max_results != max_results:
+            logger.warning(f"max_results {max_results} out of range, clamped to {clamped_max_results}")
+        max_results = clamped_max_results
+
         logger.info(f"Processing search with query: {query}, max_results: {max_results}, include_abstracts: {include_abstracts}")
 
         # Perform the search
         results = await pubmed_client.search_articles(
             query=query,
             max_results=max_results,
-            include_abstracts=include_abstracts
+            include_abstracts=include_abstracts,
+            sort=sort
         )
         
         # Create resource URIs for articles
@@ -126,8 +132,6 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
                 # Resolve to absolute path
                 file_path = Path(output_file).expanduser().resolve()
 
-                # Security check: ensure path doesn't use directory traversal tricks
-                # and is writable
                 try:
                     # Create parent directories if they don't exist
                     file_path.parent.mkdir(parents=True, exist_ok=True)
