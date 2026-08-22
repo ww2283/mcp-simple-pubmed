@@ -14,6 +14,8 @@ logger = logging.getLogger("pubmed-client")
 
 VALID_SORT_ORDERS = ("relevance", "pub_date", "Author", "JournalName")
 
+DEFAULT_ABSTRACT_CHARS = 300
+
 MAX_FETCH_ATTEMPTS = 3
 FETCH_RETRY_BASE_DELAY = 1.0
 RATE_LIMIT_DELAY_WITH_KEY = 0.11
@@ -105,7 +107,7 @@ class PubMedClient:
         envelope["articles"] = articles
         return envelope
 
-    async def search_articles(self, query: str, max_results: int = 10, include_abstracts: bool = False, sort: str = "relevance") -> Dict[str, Any]:
+    async def search_articles(self, query: str, max_results: int = 10, include_abstracts: bool = True, sort: str = "relevance", abstract_chars: int = DEFAULT_ABSTRACT_CHARS) -> Dict[str, Any]:
         """Search for articles matching the query, ordered by `sort`.
 
         Returns an envelope with total_count, returned, truncated, query_translation,
@@ -142,7 +144,7 @@ class PubMedClient:
             logger.info(f"Found {len(pmids)} articles")
 
             articles, unfetched_pmid_count = await self._fetch_articles_in_batches(
-                pmids, include_abstracts
+                pmids, include_abstracts, abstract_chars=abstract_chars
             )
 
             return self._parse_esearch_envelope(root, articles, unfetched_pmid_count)
@@ -151,7 +153,7 @@ class PubMedClient:
             logger.exception(f"Error in search_articles: {str(e)}")
             raise
 
-    async def _fetch_articles_in_batches(self, pmids: List[str], include_abstracts: bool = False, batch_size: int = 200) -> Tuple[List[Dict[str, Any]], int]:
+    async def _fetch_articles_in_batches(self, pmids: List[str], include_abstracts: bool = False, batch_size: int = 200, abstract_chars: int = DEFAULT_ABSTRACT_CHARS) -> Tuple[List[Dict[str, Any]], int]:
         """Fetch article details in batches, retrying each batch with exponential backoff.
 
         Returns the fetched articles and the count of PMIDs whose batches exhausted
@@ -164,7 +166,9 @@ class PubMedClient:
             batch_pmids = pmids[i:i + batch_size]
             logger.info(f"Fetching batch {i//batch_size + 1}: {len(batch_pmids)} articles")
 
-            batch_articles = self._fetch_batch_with_retry(batch_pmids, include_abstracts)
+            batch_articles = self._fetch_batch_with_retry(
+                batch_pmids, include_abstracts, abstract_chars=abstract_chars
+            )
             if batch_articles is None:
                 unfetched += len(batch_pmids)
             else:
@@ -179,7 +183,8 @@ class PubMedClient:
         return all_articles, unfetched
 
     def _fetch_batch_with_retry(
-        self, batch_pmids: List[str], include_abstracts: bool
+        self, batch_pmids: List[str], include_abstracts: bool,
+        abstract_chars: int = DEFAULT_ABSTRACT_CHARS
     ) -> Optional[List[Dict[str, Any]]]:
         """Fetch and parse one batch, returning None once all attempts are exhausted."""
         id_list = ",".join(batch_pmids)
@@ -197,7 +202,9 @@ class PubMedClient:
                 root = ET.fromstring(article_xml)
                 articles = []
                 for article_elem in root.findall('.//PubmedArticle'):
-                    article = self._parse_article_element(article_elem, include_abstracts)
+                    article = self._parse_article_element(
+                        article_elem, include_abstracts, abstract_chars
+                    )
                     if article:
                         articles.append(article)
                 return articles
@@ -213,7 +220,7 @@ class PubMedClient:
         logger.error(f"Giving up on batch of {len(batch_pmids)} PMIDs")
         return None
 
-    def _parse_article_element(self, article_elem: ET.Element, include_abstract: bool) -> Optional[Dict[str, Any]]:
+    def _parse_article_element(self, article_elem: ET.Element, include_abstract: bool, abstract_chars: int = DEFAULT_ABSTRACT_CHARS) -> Optional[Dict[str, Any]]:
         """Parse a single PubmedArticle element, returning None if it is unusable."""
         try:
             # Get PMID
@@ -236,7 +243,11 @@ class PubMedClient:
 
             # Include abstract only if requested
             if include_abstract:
-                article["abstract"] = self._get_full_abstract(article_elem) or "No abstract available"
+                abstract = self._get_full_abstract(article_elem)
+                if abstract and abstract_chars > 0 and len(abstract) > abstract_chars:
+                    abstract = abstract[:abstract_chars]
+                    article["abstract_truncated"] = True
+                article["abstract"] = abstract or "No abstract available"
 
             # Get authors
             author_list = article_elem.findall('.//Author')

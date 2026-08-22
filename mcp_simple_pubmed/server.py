@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from fastmcp import FastMCP
-from mcp_simple_pubmed.pubmed_client import PubMedClient
+from mcp_simple_pubmed.pubmed_client import PubMedClient, DEFAULT_ABSTRACT_CHARS
 from mcp_simple_pubmed.fulltext_client import FullTextClient
 
 # Configure logging
@@ -75,7 +75,7 @@ def _bound_fulltext(text: str, max_chars: int, offset: int) -> str:
         "openWorldHint": True  # Calls external PubMed API
     }
 )
-async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bool = False, output_file: Optional[str] = None, sort: str = "relevance") -> str:
+async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bool = True, output_file: Optional[str] = None, sort: str = "relevance", abstract_chars: int = DEFAULT_ABSTRACT_CHARS) -> str:
     """Search PubMed for medical and life sciences research articles.
 
     Results default to relevance ("Best Match") order; use the sort parameter to change it.
@@ -85,7 +85,8 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
     Args:
         query: Search query string
         max_results: Maximum number of results to return (clamped to 1..1000, default: 10)
-        include_abstracts: Include abstracts in results (default: False). Set to True to include full abstracts.
+        include_abstracts: Include abstracts in results (default: True). Set to False to omit them entirely.
+        abstract_chars: Abstract character budget (default: 300); 0 returns the full abstract.
         output_file: Optional file path to save results; results are written wherever this path points
                      (parent directories are created) and only a summary is returned.
         sort: Result ordering - one of relevance, pub_date, Author, JournalName (default: relevance)
@@ -117,7 +118,7 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
     - articles: title, authors, journal, publication details, links, DOI, keywords, MeSH terms
 
     Note: Use quotes around multi-word terms for best results.
-          By default, abstracts are excluded to reduce token usage. Fetch them on-demand via resources.
+          Abstracts are included but capped at abstract_chars; abstract_truncated marks the cut ones.
     """
     try:
         clamped_max_results = min(MAX_RESULTS_LIMIT, max(1, max_results))
@@ -132,7 +133,8 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
             query=query,
             max_results=max_results,
             include_abstracts=include_abstracts,
-            sort=sort
+            sort=sort,
+            abstract_chars=abstract_chars
         )
         
         # Create resource URIs for articles
