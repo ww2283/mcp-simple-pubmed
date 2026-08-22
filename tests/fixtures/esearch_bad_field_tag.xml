@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE eSearchResult PUBLIC "-//NLM//DTD esearch 20060628//EN" "https://eutils.ncbi.nlm.nih.gov/eutils/dtd/20060628/esearch.dtd">
+<eSearchResult><Count>1419</Count><RetMax>3</RetMax><RetStart>0</RetStart><IdList>
+<Id>24121476</Id>
+<Id>37973552</Id>
+<Id>38395908</Id>
+</IdList><TranslationSet/><QueryTranslation>"hspa8"[All Fields]</QueryTranslation><ErrorList><FieldNotFound>NoSuchField</FieldNotFound></ErrorList></eSearchResult>

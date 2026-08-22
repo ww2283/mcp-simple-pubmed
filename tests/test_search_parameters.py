@@ -38,7 +38,13 @@ def search_articles_calls(monkeypatch) -> list[dict]:
 
     async def fake_search_articles(**kwargs):
         calls.append(kwargs)
-        return []
+        return {
+            "total_count": 0,
+            "returned": 0,
+            "truncated": False,
+            "query_translation": "",
+            "articles": [],
+        }
 
     monkeypatch.setattr(server.pubmed_client, "search_articles", fake_search_articles)
     return calls

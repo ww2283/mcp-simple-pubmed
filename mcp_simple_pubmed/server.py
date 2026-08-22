@@ -76,15 +76,11 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
     - "Smith J"[Author] AND "diabetes"
     - "RNA"[MeSH Terms] AND "therapy"
 
-    The search will return:
-    - Paper titles
-    - Authors
-    - Journal name
-    - Publication details
-    - Abstract (only if include_abstracts=True)
-    - Links to full text (when available)
-    - DOI when available
-    - Keywords and MeSH terms
+    The search returns an envelope:
+    - total_count / returned / truncated: how many matched vs. how many are here
+    - query_translation: how PubMed actually interpreted the query
+    - errors / warnings: present only when PubMed reports them (e.g. an unknown field tag)
+    - articles: title, authors, journal, publication details, links, DOI, keywords, MeSH terms
 
     Note: Use quotes around multi-word terms for best results.
           By default, abstracts are excluded to reduce token usage. Fetch them on-demand via resources.
@@ -107,7 +103,7 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
         
         # Create resource URIs for articles
         articles_with_resources = []
-        for article in results:
+        for article in results["articles"]:
             pmid = article["pmid"]
             # Add original URIs
             article["abstract_uri"] = f"pubmed://{pmid}/abstract"
@@ -126,6 +122,10 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
             
             articles_with_resources.append(article)
 
+        envelope = {**results, "articles": articles_with_resources}
+        total_count = envelope.get("total_count", len(articles_with_resources))
+        truncated = envelope.get("truncated", False)
+
         # Handle file output if requested
         if output_file:
             try:
@@ -138,13 +138,21 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
 
                     # Write results to file
                     with open(file_path, 'w', encoding='utf-8') as f:
-                        json.dump(articles_with_resources, f, indent=2, ensure_ascii=False)
+                        json.dump(envelope, f, indent=2, ensure_ascii=False)
 
                     logger.info(f"Results written to file: {file_path}")
 
+                    truncation_note = (
+                        f"TRUNCATED: only {len(articles_with_resources)} of {total_count} matching records were written; "
+                        "this file is not a complete view of the literature."
+                        if truncated
+                        else f"Complete: all {total_count} matching records were written."
+                    )
+
                     # Create summary response
                     summary_lines = [
-                        f"Search completed successfully. Found {len(results)} results.",
+                        f"Search completed successfully. {total_count} total matches, {len(articles_with_resources)} returned.",
+                        truncation_note,
                         f"Results written to: {file_path}",
                         "",
                         "Top results:"
@@ -174,8 +182,8 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
                 raise ValueError(f"Error writing results to file: {str(e)}")
 
         # Format the response for direct return
-        formatted_results = json.dumps(articles_with_resources, indent=2)
-        logger.info(f"Search completed successfully, found {len(results)} results")
+        formatted_results = json.dumps(envelope, indent=2)
+        logger.info(f"Search completed successfully, found {total_count} results")
 
         return formatted_results
         

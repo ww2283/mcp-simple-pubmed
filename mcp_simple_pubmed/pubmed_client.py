@@ -35,10 +35,50 @@ class PubMedClient:
         if api_key:
             Entrez.api_key = api_key
 
-    async def search_articles(self, query: str, max_results: int = 10, include_abstracts: bool = False, sort: str = "relevance") -> List[Dict[str, Any]]:
+    @staticmethod
+    def _empty_envelope() -> Dict[str, Any]:
+        return {
+            "total_count": 0,
+            "returned": 0,
+            "truncated": False,
+            "query_translation": "",
+            "articles": [],
+        }
+
+    @staticmethod
+    def _parse_esearch_envelope(root: ET.Element, articles: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Build the search result envelope from an esearch root and fetched articles."""
+        count_elem = root.find('.//Count')
+        try:
+            total_count = int(count_elem.text) if count_elem is not None and count_elem.text else 0
+        except ValueError:
+            total_count = 0
+
+        translation_elem = root.find('.//QueryTranslation')
+        query_translation = (translation_elem.text or "") if translation_elem is not None else ""
+
+        envelope: Dict[str, Any] = {
+            "total_count": total_count,
+            "returned": len(articles),
+            "truncated": total_count > len(articles),
+            "query_translation": query_translation,
+        }
+
+        for key, tag in (("errors", "ErrorList"), ("warnings", "WarningList")):
+            container = root.find(f'.//{tag}')
+            if container is not None:
+                envelope[key] = [
+                    {"type": child.tag, "value": child.text or ""} for child in container
+                ]
+
+        envelope["articles"] = articles
+        return envelope
+
+    async def search_articles(self, query: str, max_results: int = 10, include_abstracts: bool = False, sort: str = "relevance") -> Dict[str, Any]:
         """Search for articles matching the query, ordered by `sort`.
 
-        Valid sort orders are listed in VALID_SORT_ORDERS; anything else raises ValueError.
+        Returns an envelope with total_count, returned, truncated, query_translation,
+        optional errors/warnings, and articles.
         """
         if sort not in VALID_SORT_ORDERS:
             raise ValueError(
@@ -47,34 +87,32 @@ class PubMedClient:
 
         try:
             logger.info(f"Searching PubMed with query: {query}")
-            results = []
 
-            # Step 1: Search for article IDs
             handle = Entrez.esearch(db="pubmed", term=query, retmax=str(max_results), sort=sort)
             if not handle:
                 logger.error("Got None handle from esearch")
-                return []
+                return self._empty_envelope()
 
-            if isinstance(handle, http.client.HTTPResponse):
-                logger.info("Got valid HTTP response from esearch")
-                xml_content = handle.read()
-                handle.close()
+            if not isinstance(handle, http.client.HTTPResponse):
+                return self._empty_envelope()
 
-                # Parse XML to get IDs
-                root = ET.fromstring(xml_content)
-                id_list = root.findall('.//Id')
+            logger.info("Got valid HTTP response from esearch")
+            xml_content = handle.read()
+            handle.close()
 
-                if not id_list:
-                    logger.info("No results found")
-                    return []
+            root = ET.fromstring(xml_content)
+            id_list = root.findall('.//Id')
 
-                pmids = [id_elem.text for id_elem in id_list if id_elem.text]
-                logger.info(f"Found {len(pmids)} articles")
+            if not id_list:
+                logger.info("No results found")
+                return self._parse_esearch_envelope(root, [])
 
-                # Step 2: Get details in batches
-                results = await self._fetch_articles_in_batches(pmids, include_abstracts)
+            pmids = [id_elem.text for id_elem in id_list if id_elem.text]
+            logger.info(f"Found {len(pmids)} articles")
 
-            return results
+            articles = await self._fetch_articles_in_batches(pmids, include_abstracts)
+
+            return self._parse_esearch_envelope(root, articles)
 
         except Exception as e:
             logger.exception(f"Error in search_articles: {str(e)}")
