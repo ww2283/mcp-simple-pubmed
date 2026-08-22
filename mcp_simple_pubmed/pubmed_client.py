@@ -249,7 +249,8 @@ class PubMedClient:
                 "nlm_unique_id": self._get_xml_text(article_elem, './/NlmUniqueID') or "",
                 "authors": [],
                 "keywords": [],
-                "mesh_terms": []
+                "mesh_terms": [],
+                "publication_types": []
             }
 
             # Include abstract only if requested
@@ -299,6 +300,12 @@ class PubMedClient:
                     clean_keyword = keyword.text.strip().rstrip('.')
                     if clean_keyword:
                         article["keywords"].append(clean_keyword)
+
+            # Get publication types
+            publication_type_list = article_elem.findall('.//PublicationTypeList/PublicationType')
+            for publication_type in publication_type_list:
+                if publication_type.text:
+                    article["publication_types"].append(publication_type.text)
 
             # Get MeSH terms
             mesh_heading_list = article_elem.findall('.//MeshHeading')
