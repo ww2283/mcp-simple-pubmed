@@ -5,7 +5,7 @@ import os
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Tuple
 
 from fastmcp import FastMCP
 from mcp_simple_pubmed.pubmed_client import PubMedClient
@@ -45,9 +45,13 @@ pubmed_client, fulltext_client = configure_clients()
 async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bool = False, output_file: Optional[str] = None) -> str:
     """Search PubMed for medical and life sciences research articles.
 
+    Results are automatically sorted by relevance (PubMed's "Best Match" algorithm),
+    which considers search term matching, publication recency, citations, and other
+    relevance signals to return the most pertinent articles first.
+
     Args:
         query: Search query string
-        max_results: Maximum number of results to return (1-50, default: 10)
+        max_results: Maximum number of results to return (minimum: 1, default: 10)
         include_abstracts: Include abstracts in results (default: False). Set to True to include full abstracts.
         output_file: Optional file path to save results. If provided, results are written to file and only
                      a summary is returned. Use absolute path or path relative to current directory.
@@ -83,8 +87,8 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
           By default, abstracts are excluded to reduce token usage. Fetch them on-demand via resources.
     """
     try:
-        # Validate and constrain max_results
-        max_results = min(max(1, max_results), 50)
+        # Validate max_results (minimum 1, no upper limit)
+        max_results = max(1, max_results)
         
         logger.info(f"Processing search with query: {query}, max_results: {max_results}, include_abstracts: {include_abstracts}")
 
@@ -172,7 +176,7 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
         return formatted_results
         
     except Exception as e:
-        logger.exception(f"Error in search_pubmed")
+        logger.exception("Error in search_pubmed")
         raise ValueError(f"Error processing search request: {str(e)}")
 
 @app.tool(
@@ -222,7 +226,7 @@ async def get_paper_fulltext(pmid: str) -> str:
         return message
         
     except Exception as e:
-        logger.exception(f"Error in get_paper_fulltext")
+        logger.exception("Error in get_paper_fulltext")
         raise ValueError(f"Error retrieving full text: {str(e)}")
 
 

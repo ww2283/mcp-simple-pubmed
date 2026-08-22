@@ -163,14 +163,24 @@ cython_debug/
 
 .cursor
 
-# Claude template files (copied, can be synced)
-.claude/*
-!.claude/settings.local.json
-!.claude/.template-source
+# Claude template files (copied, can be synced) - never tracked
+.claude/
+.mcp.json
+.doc/
+.claude_session_*
+.lock..claude_session_*
+git_commit_frame.json
 check_deps
 sync_deps
-.mcp.json
-.claude/
+claude
+install_skill_deps
+
+# CI workflow depends on gitignored .claude/scripts, so it cannot run here
+.github/workflows/
 
 # leann
 .leann/
+
+# Editor / OS
+.vscode/
+.DS_Store
