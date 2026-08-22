@@ -29,6 +29,10 @@ Homepage = "https://github.com/andybrandt/mcp-simple-pubmed"
 [project.scripts]
 mcp-simple-pubmed = "mcp_simple_pubmed.__main__:main"
 
+[tool.pytest.ini_options]
+# Root-level test_*.py are live-API scripts, not pytest tests.
+testpaths = ["tests"]
+
 [tool.ruff]
 target-version = "py311"
 
