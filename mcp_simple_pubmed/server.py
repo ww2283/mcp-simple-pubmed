@@ -75,7 +75,7 @@ def _bound_fulltext(text: str, max_chars: int, offset: int) -> str:
         "openWorldHint": True  # Calls external PubMed API
     }
 )
-async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bool = True, output_file: Optional[str] = None, sort: str = "relevance", abstract_chars: int = DEFAULT_ABSTRACT_CHARS) -> str:
+async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bool = True, output_file: Optional[str] = None, sort: str = "relevance", abstract_chars: int = DEFAULT_ABSTRACT_CHARS, offset: int = 0) -> str:
     """Search PubMed for medical and life sciences research articles.
 
     Results default to relevance ("Best Match") order; use the sort parameter to change it.
@@ -90,6 +90,8 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
         output_file: Optional file path to save results; results are written wherever this path points
                      (parent directories are created) and only a summary is returned.
         sort: Result ordering - one of relevance, pub_date, Author, JournalName (default: relevance)
+        offset: Index of the first hit to return (default: 0); page with has_more to go
+                past max_results, and keep sort constant across pages.
 
     You can use these search features:
     - Simple keyword search: "covid vaccine"
@@ -112,6 +114,7 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
 
     The search returns an envelope:
     - total_count / returned / truncated: how many matched vs. how many are here
+    - offset / has_more: where this page started and whether further hits remain
     - query_translation: how PubMed actually interpreted the query
     - term_mappings: from/to pairs, present only when PubMed remapped a term automatically
     - errors / warnings: present only when PubMed reports them (e.g. an unknown field tag)
@@ -134,7 +137,8 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
             max_results=max_results,
             include_abstracts=include_abstracts,
             sort=sort,
-            abstract_chars=abstract_chars
+            abstract_chars=abstract_chars,
+            offset=offset
         )
         
         # Create resource URIs for articles

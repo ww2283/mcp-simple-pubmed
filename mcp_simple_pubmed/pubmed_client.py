@@ -49,6 +49,8 @@ class PubMedClient:
             "returned": 0,
             "truncated": False,
             "query_translation": "",
+            "offset": 0,
+            "has_more": False,
             "articles": [],
         }
 
@@ -57,6 +59,7 @@ class PubMedClient:
         root: ET.Element,
         articles: List[Dict[str, Any]],
         unfetched_pmid_count: int = 0,
+        offset: int = 0,
     ) -> Dict[str, Any]:
         """Build the search result envelope from an esearch root and fetched articles."""
         count_elem = root.find('.//Count')
@@ -73,6 +76,8 @@ class PubMedClient:
             "returned": len(articles),
             "truncated": total_count > len(articles),
             "query_translation": query_translation,
+            "offset": offset,
+            "has_more": offset + len(articles) < total_count,
         }
 
         for key, tag in (("errors", "ErrorList"), ("warnings", "WarningList")):
@@ -107,21 +112,25 @@ class PubMedClient:
         envelope["articles"] = articles
         return envelope
 
-    async def search_articles(self, query: str, max_results: int = 10, include_abstracts: bool = True, sort: str = "relevance", abstract_chars: int = DEFAULT_ABSTRACT_CHARS) -> Dict[str, Any]:
-        """Search for articles matching the query, ordered by `sort`.
+    async def search_articles(self, query: str, max_results: int = 10, include_abstracts: bool = True, sort: str = "relevance", abstract_chars: int = DEFAULT_ABSTRACT_CHARS, offset: int = 0) -> Dict[str, Any]:
+        """Search for articles matching the query, ordered by `sort`, starting at `offset`.
 
         Returns an envelope with total_count, returned, truncated, query_translation,
-        optional errors/warnings, and articles.
+        offset, has_more, optional errors/warnings, and articles.
         """
         if sort not in VALID_SORT_ORDERS:
             raise ValueError(
                 f"Invalid sort order {sort!r}. Valid sort orders are: {', '.join(VALID_SORT_ORDERS)}"
             )
 
+        if offset < 0:
+            logger.warning(f"offset {offset} is negative, clamped to 0")
+            offset = 0
+
         try:
             logger.info(f"Searching PubMed with query: {query}")
 
-            handle = Entrez.esearch(db="pubmed", term=query, retmax=str(max_results), sort=sort)
+            handle = Entrez.esearch(db="pubmed", term=query, retmax=str(max_results), sort=sort, retstart=str(offset))
             if not handle:
                 logger.error("Got None handle from esearch")
                 return self._empty_envelope()
@@ -138,7 +147,7 @@ class PubMedClient:
 
             if not id_list:
                 logger.info("No results found")
-                return self._parse_esearch_envelope(root, [])
+                return self._parse_esearch_envelope(root, [], offset=offset)
 
             pmids = [id_elem.text for id_elem in id_list if id_elem.text]
             logger.info(f"Found {len(pmids)} articles")
@@ -147,7 +156,9 @@ class PubMedClient:
                 pmids, include_abstracts, abstract_chars=abstract_chars
             )
 
-            return self._parse_esearch_envelope(root, articles, unfetched_pmid_count)
+            return self._parse_esearch_envelope(
+                root, articles, unfetched_pmid_count, offset=offset
+            )
 
         except Exception as e:
             logger.exception(f"Error in search_articles: {str(e)}")
