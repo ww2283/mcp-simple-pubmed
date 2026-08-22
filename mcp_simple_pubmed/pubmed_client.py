@@ -71,6 +71,19 @@ class PubMedClient:
                     {"type": child.tag, "value": child.text or ""} for child in container
                 ]
 
+        translation_set = root.find('.//TranslationSet')
+        if translation_set is not None:
+            mappings = []
+            for translation in translation_set.findall('Translation'):
+                from_elem = translation.find('From')
+                to_elem = translation.find('To')
+                mappings.append({
+                    "from": ((from_elem.text or "") if from_elem is not None else "").strip(),
+                    "to": ((to_elem.text or "") if to_elem is not None else "").strip(),
+                })
+            if mappings:
+                envelope["term_mappings"] = mappings
+
         envelope["articles"] = articles
         return envelope
 

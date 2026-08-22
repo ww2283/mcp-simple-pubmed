@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE eSearchResult PUBLIC "-//NLM//DTD esearch 20060628//EN" "https://eutils.ncbi.nlm.nih.gov/eutils/dtd/20060628/esearch.dtd">
+<eSearchResult><Count>20</Count><RetMax>3</RetMax><RetStart>0</RetStart><IdList>
+<Id>29016855</Id>
+<Id>29298892</Id>
+<Id>30936201</Id>
+</IdList><TranslationSet/><QueryTranslation>"hspa8"[All Fields] AND "tau"[All Fields]</QueryTranslation></eSearchResult>

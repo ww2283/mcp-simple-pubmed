@@ -69,6 +69,8 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
     - Date ranges: Add year or date range like "2020:2024[Date - Publication]"
     - Combine terms with AND, OR, NOT
     - Use quotation marks for exact phrases
+    - Quoting a term or giving it a field tag (e.g. tau[tiab]) suppresses automatic term mapping;
+      term_mappings in the result shows which terms PubMed expanded on your behalf
 
     Examples:
     - "covid vaccine" - basic search
@@ -79,6 +81,7 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
     The search returns an envelope:
     - total_count / returned / truncated: how many matched vs. how many are here
     - query_translation: how PubMed actually interpreted the query
+    - term_mappings: from/to pairs, present only when PubMed remapped a term automatically
     - errors / warnings: present only when PubMed reports them (e.g. an unknown field tag)
     - articles: title, authors, journal, publication details, links, DOI, keywords, MeSH terms
 
