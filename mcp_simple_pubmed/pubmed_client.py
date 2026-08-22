@@ -5,7 +5,7 @@ import time
 import logging
 import http.client
 import xml.etree.ElementTree as ET
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from Bio import Entrez
 
 # Configure logging
@@ -13,6 +13,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pubmed-client")
 
 VALID_SORT_ORDERS = ("relevance", "pub_date", "Author", "JournalName")
+
+MAX_FETCH_ATTEMPTS = 3
+FETCH_RETRY_BASE_DELAY = 1.0
+RATE_LIMIT_DELAY_WITH_KEY = 0.11
+RATE_LIMIT_DELAY_WITHOUT_KEY = 0.34
 
 class PubMedClient:
     """Client for interacting with PubMed/Entrez API."""
@@ -28,7 +33,7 @@ class PubMedClient:
         self.email = email
         self.tool = tool
         self.api_key = api_key
-        
+
         # Configure Entrez
         Entrez.email = email
         Entrez.tool = tool
@@ -46,7 +51,11 @@ class PubMedClient:
         }
 
     @staticmethod
-    def _parse_esearch_envelope(root: ET.Element, articles: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _parse_esearch_envelope(
+        root: ET.Element,
+        articles: List[Dict[str, Any]],
+        unfetched_pmid_count: int = 0,
+    ) -> Dict[str, Any]:
         """Build the search result envelope from an esearch root and fetched articles."""
         count_elem = root.find('.//Count')
         try:
@@ -70,6 +79,15 @@ class PubMedClient:
                 envelope[key] = [
                     {"type": child.tag, "value": child.text or ""} for child in container
                 ]
+
+        if unfetched_pmid_count:
+            envelope.setdefault("warnings", []).append({
+                "type": "FetchIncomplete",
+                "value": (
+                    f"{unfetched_pmid_count} PMIDs could not be retrieved after "
+                    f"{MAX_FETCH_ATTEMPTS} attempts and are missing from articles"
+                ),
+            })
 
         translation_set = root.find('.//TranslationSet')
         if translation_set is not None:
@@ -123,55 +141,77 @@ class PubMedClient:
             pmids = [id_elem.text for id_elem in id_list if id_elem.text]
             logger.info(f"Found {len(pmids)} articles")
 
-            articles = await self._fetch_articles_in_batches(pmids, include_abstracts)
+            articles, unfetched_pmid_count = await self._fetch_articles_in_batches(
+                pmids, include_abstracts
+            )
 
-            return self._parse_esearch_envelope(root, articles)
+            return self._parse_esearch_envelope(root, articles, unfetched_pmid_count)
 
         except Exception as e:
             logger.exception(f"Error in search_articles: {str(e)}")
             raise
 
-    async def _fetch_articles_in_batches(self, pmids: List[str], include_abstracts: bool = False, batch_size: int = 200) -> List[Dict[str, Any]]:
-        """Fetch article details in batches, skipping any batch that errors."""
-        all_articles = []
+    async def _fetch_articles_in_batches(self, pmids: List[str], include_abstracts: bool = False, batch_size: int = 200) -> Tuple[List[Dict[str, Any]], int]:
+        """Fetch article details in batches, retrying each batch with exponential backoff.
 
-        # Split PMIDs into batches
+        Returns the fetched articles and the count of PMIDs whose batches exhausted
+        their attempts, so callers can surface them rather than dropping them silently.
+        """
+        all_articles: List[Dict[str, Any]] = []
+        unfetched = 0
+
         for i in range(0, len(pmids), batch_size):
             batch_pmids = pmids[i:i + batch_size]
             logger.info(f"Fetching batch {i//batch_size + 1}: {len(batch_pmids)} articles")
 
-            try:
-                # Fetch batch of articles
-                id_list = ",".join(batch_pmids)
-                detail_handle = Entrez.efetch(db="pubmed", id=id_list, rettype="xml")
+            batch_articles = self._fetch_batch_with_retry(batch_pmids, include_abstracts)
+            if batch_articles is None:
+                unfetched += len(batch_pmids)
+            else:
+                all_articles.extend(batch_articles)
 
-                if detail_handle and isinstance(detail_handle, http.client.HTTPResponse):
-                    article_xml = detail_handle.read()
-                    detail_handle.close()
-
-                    # Parse batch XML - contains multiple PubmedArticle elements
-                    root = ET.fromstring(article_xml)
-                    article_elements = root.findall('.//PubmedArticle')
-
-                    logger.info(f"Parsing {len(article_elements)} articles from batch")
-
-                    # Process each article in the batch
-                    for article_elem in article_elements:
-                        article = self._parse_article_element(article_elem, include_abstracts)
-                        if article:
-                            all_articles.append(article)
-
-                # Respect rate limits (3 requests/sec without API key, 10/sec with API key)
-                if not self.api_key and i + batch_size < len(pmids):
-                    time.sleep(0.34)  # ~3 requests per second
-
-            except Exception as e:
-                logger.exception(f"Error fetching batch starting at index {i}: {str(e)}")
-                # Continue with next batch even if one fails
-                continue
+            if i + batch_size < len(pmids):
+                time.sleep(
+                    RATE_LIMIT_DELAY_WITH_KEY if self.api_key else RATE_LIMIT_DELAY_WITHOUT_KEY
+                )
 
         logger.info(f"Successfully fetched {len(all_articles)} articles from {len(pmids)} PMIDs")
-        return all_articles
+        return all_articles, unfetched
+
+    def _fetch_batch_with_retry(
+        self, batch_pmids: List[str], include_abstracts: bool
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Fetch and parse one batch, returning None once all attempts are exhausted."""
+        id_list = ",".join(batch_pmids)
+
+        for attempt in range(1, MAX_FETCH_ATTEMPTS + 1):
+            try:
+                detail_handle = Entrez.efetch(db="pubmed", id=id_list, rettype="xml")
+
+                if not (detail_handle and isinstance(detail_handle, http.client.HTTPResponse)):
+                    return []
+
+                article_xml = detail_handle.read()
+                detail_handle.close()
+
+                root = ET.fromstring(article_xml)
+                articles = []
+                for article_elem in root.findall('.//PubmedArticle'):
+                    article = self._parse_article_element(article_elem, include_abstracts)
+                    if article:
+                        articles.append(article)
+                return articles
+
+            except Exception as e:
+                logger.warning(
+                    f"efetch attempt {attempt}/{MAX_FETCH_ATTEMPTS} failed for "
+                    f"{len(batch_pmids)} PMIDs: {str(e)}"
+                )
+                if attempt < MAX_FETCH_ATTEMPTS:
+                    time.sleep(FETCH_RETRY_BASE_DELAY * (2 ** (attempt - 1)))
+
+        logger.error(f"Giving up on batch of {len(batch_pmids)} PMIDs")
+        return None
 
     def _parse_article_element(self, article_elem: ET.Element, include_abstract: bool) -> Optional[Dict[str, Any]]:
         """Parse a single PubmedArticle element, returning None if it is unusable."""

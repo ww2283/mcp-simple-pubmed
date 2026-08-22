@@ -63,7 +63,7 @@ def serve_esearch(monkeypatch):
 def serve_articles(monkeypatch, client: PubMedClient):
     def _serve(articles: List[Dict[str, Any]]) -> None:
         async def fake_fetch(*args, **kwargs):
-            return articles
+            return articles, 0
 
         monkeypatch.setattr(client, "_fetch_articles_in_batches", fake_fetch)
 
