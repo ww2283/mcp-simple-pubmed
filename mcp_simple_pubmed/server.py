@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pubmed-server")
 
 MAX_RESULTS_LIMIT = 1000
+DEFAULT_FULLTEXT_MAX_CHARS = 50000
 
 # Initialize FastMCP app
 app = FastMCP("pubmed-server")
@@ -36,6 +37,36 @@ def configure_clients() -> Tuple[PubMedClient, FullTextClient]:
 
 # Initialize the clients
 pubmed_client, fulltext_client = configure_clients()
+
+
+def _bound_fulltext(text: str, max_chars: int, offset: int) -> str:
+    """Return at most max_chars of text from offset, with a paging trailer if more remains."""
+    clamped_max_chars = max(1, max_chars)
+    clamped_offset = max(0, offset)
+    if clamped_max_chars != max_chars or clamped_offset != offset:
+        logger.warning(
+            f"_bound_fulltext arguments out of range (max_chars={max_chars}, offset={offset}), "
+            f"clamped to max_chars={clamped_max_chars}, offset={clamped_offset}"
+        )
+    max_chars = clamped_max_chars
+    offset = clamped_offset
+
+    total = len(text)
+    if offset >= total:
+        return (
+            f"[No content at offset {offset}: the article is only {total} "
+            f"characters long. Use a smaller offset.]"
+        )
+
+    end = offset + max_chars
+    chunk = text[offset:end]
+    if end >= total:
+        return chunk
+
+    return (
+        f"{chunk}\n\n[TRUNCATED: returned characters {offset}-{end} of {total}. "
+        f"Call again with offset={end} to continue.]"
+    )
 
 @app.tool(
     annotations={
@@ -201,19 +232,11 @@ async def search_pubmed(query: str, max_results: int = 10, include_abstracts: bo
         "openWorldHint": True  # Calls external PubMed API
     }
 )
-async def get_paper_fulltext(pmid: str) -> str:
-    """Get full text of a PubMed article using its ID.
+async def get_paper_fulltext(pmid: str, max_chars: int = DEFAULT_FULLTEXT_MAX_CHARS, offset: int = 0) -> str:
+    """Get full text from PubMed Central, or a message naming where else to find it.
 
-    This tool attempts to retrieve the complete text of the paper if available through PubMed Central.
-    If the paper is not available in PMC, it will return a message explaining why and provide information
-    about where the text might be available (e.g., through DOI).
-
-    Example usage:
-    get_paper_fulltext(pmid="39661433")
-
-    Returns:
-    - If successful: The complete text of the paper
-    - If not available: A clear message explaining why (e.g., "not in PMC", "requires journal access")
+    Returns at most max_chars characters starting at offset; a longer article comes
+    back with a trailer stating the offset to call again with.
     """
     try:
         logger.info(f"Attempting to get full text for PMID: {pmid}")
@@ -225,7 +248,7 @@ async def get_paper_fulltext(pmid: str) -> str:
             full_text = await fulltext_client.get_full_text(pmid)
             if full_text:
                 logger.info(f"Successfully retrieved full text from PMC for PMID {pmid}")
-                return full_text
+                return _bound_fulltext(full_text, max_chars, offset)
 
         # Get article details to provide alternative locations
         article = await pubmed_client.get_article_details(pmid)
@@ -268,7 +291,7 @@ async def read_pubmed_resource(pmid: str, resource_type: str) -> str:
             if available:
                 full_text = await fulltext_client.get_full_text(pmid)
                 if full_text:
-                    return full_text
+                    return _bound_fulltext(full_text, DEFAULT_FULLTEXT_MAX_CHARS, 0)
             
             # If not available, provide the same helpful message as the tool
             article = await pubmed_client.get_article_details(pmid)
