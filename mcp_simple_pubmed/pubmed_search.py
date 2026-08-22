@@ -1,8 +1,6 @@
 """
 Search functionality for PubMed using Bio.Entrez.
 """
-import os
-import time
 import logging
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional, Any
@@ -79,7 +77,7 @@ class PubMedSearch:
                 logger.error(f"Error in PubMed search: {str(e)}")
                 return []
 
-            if not 'IdList' in search_results or not search_results['IdList']:
+            if 'IdList' not in search_results or not search_results['IdList']:
                 logger.info("No results found")
                 return []
                 

@@ -4,7 +4,6 @@ Separate from main PubMed client to maintain code separation and stability.
 """
 import logging
 import time
-import http.client
 from typing import Optional, Tuple
 from Bio import Entrez
 import xml.etree.ElementTree as ET

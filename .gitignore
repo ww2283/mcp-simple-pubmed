@@ -175,9 +175,6 @@ sync_deps
 claude
 install_skill_deps
 
-# CI workflow depends on gitignored .claude/scripts, so it cannot run here
-.github/workflows/
-
 # leann
 .leann/
 
