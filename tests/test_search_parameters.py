@@ -11,6 +11,10 @@ from mcp_simple_pubmed import server
 from mcp_simple_pubmed.pubmed_client import PubMedClient
 
 
+# fastmcp 2.x wraps the tool in a FunctionTool exposing .fn; 3.x leaves the function bare.
+search_pubmed = getattr(server.search_pubmed, "fn", server.search_pubmed)
+
+
 @pytest.fixture
 def client() -> PubMedClient:
     return PubMedClient(email="test@example.com", tool="pytest-suite")
@@ -78,7 +82,7 @@ def test_invalid_sort_raises_value_error_before_calling_esearch(client, esearch_
 def test_max_results_above_limit_is_clamped_and_warned(search_articles_calls, caplog):
     # When
     with caplog.at_level(logging.WARNING, logger="pubmed-server"):
-        asyncio.run(server.search_pubmed.fn(query="crispr", max_results=10000))
+        asyncio.run(search_pubmed(query="crispr", max_results=10000))
 
     # Then
     assert search_articles_calls[0]["max_results"] == 1000
@@ -88,7 +92,7 @@ def test_max_results_above_limit_is_clamped_and_warned(search_articles_calls, ca
 def test_max_results_below_one_is_clamped_to_one_and_warned(search_articles_calls, caplog):
     # When
     with caplog.at_level(logging.WARNING, logger="pubmed-server"):
-        asyncio.run(server.search_pubmed.fn(query="crispr", max_results=0))
+        asyncio.run(search_pubmed(query="crispr", max_results=0))
 
     # Then
     assert search_articles_calls[0]["max_results"] == 1
@@ -100,7 +104,7 @@ def test_in_range_max_results_passes_through_untouched(search_articles_calls):
     limit = server.MAX_RESULTS_LIMIT
 
     # When
-    asyncio.run(server.search_pubmed.fn(query="crispr", max_results=25))
+    asyncio.run(search_pubmed(query="crispr", max_results=25))
 
     # Then
     assert limit == 1000
@@ -109,7 +113,7 @@ def test_in_range_max_results_passes_through_untouched(search_articles_calls):
 
 def test_server_forwards_explicit_sort_to_client(search_articles_calls):
     # When
-    asyncio.run(server.search_pubmed.fn(query="crispr", sort="pub_date"))
+    asyncio.run(search_pubmed(query="crispr", sort="pub_date"))
 
     # Then
     assert search_articles_calls[0]["sort"] == "pub_date"
@@ -117,7 +121,7 @@ def test_server_forwards_explicit_sort_to_client(search_articles_calls):
 
 def test_server_defaults_sort_to_relevance_when_caller_omits_it(search_articles_calls):
     # When
-    asyncio.run(server.search_pubmed.fn(query="crispr"))
+    asyncio.run(search_pubmed(query="crispr"))
 
     # Then
     assert search_articles_calls[0]["sort"] == "relevance"
@@ -128,7 +132,7 @@ def test_invalid_sort_message_survives_tool_boundary_wrapping():
     # must still name the bad value and the valid orders.
     # When
     with pytest.raises(ValueError) as excinfo:
-        asyncio.run(server.search_pubmed.fn(query="crispr", sort="bogus"))
+        asyncio.run(search_pubmed(query="crispr", sort="bogus"))
 
     # Then
     message = str(excinfo.value)
